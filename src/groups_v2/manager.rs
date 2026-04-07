@@ -244,11 +244,14 @@ impl<C: CredentialsCache> GroupsManager<C> {
         Ok(HttpAuth { username, password })
     }
 
+    /// Fetch encrypted group state from the server.
+    /// Returns (Group, Option<endorsement_bytes>) — endorsements are present if
+    /// the server returned a GroupSendEndorsementsResponse alongside the group.
     pub async fn fetch_encrypted_group<R: Rng + CryptoRng>(
         &mut self,
         csprng: &mut R,
         master_key_bytes: &[u8],
-    ) -> Result<crate::proto::Group, ServiceError> {
+    ) -> Result<(crate::proto::Group, Option<Vec<u8>>), ServiceError> {
         let group_master_key = GroupMasterKey::new(
             master_key_bytes
                 .try_into()
@@ -259,7 +262,14 @@ impl<C: CredentialsCache> GroupsManager<C> {
         let authorization = self
             .get_authorization_for_today(csprng, group_secret_params)
             .await?;
-        self.identified_push_service.get_group(authorization).await
+        let response = self.identified_push_service.get_group(authorization).await?;
+        let endorsements = if response.group_send_endorsements_response.is_empty() {
+            None
+        } else {
+            Some(response.group_send_endorsements_response)
+        };
+        let group = response.group.ok_or(ServiceError::GroupsV2Error)?;
+        Ok((group, endorsements))
     }
 
     #[tracing::instrument(

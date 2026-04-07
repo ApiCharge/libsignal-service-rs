@@ -188,7 +188,7 @@ impl PushService {
     pub(crate) async fn get_group(
         &mut self,
         credentials: HttpAuth,
-    ) -> Result<crate::proto::Group, ServiceError> {
+    ) -> Result<crate::proto::GroupResponse, ServiceError> {
         self.request(
             Method::GET,
             Endpoint::storage("/v1/groups/"),
