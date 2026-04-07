@@ -1,4 +1,11 @@
-use std::{convert::TryFrom, fmt, time::SystemTime};
+use std::{cell::RefCell, convert::TryFrom, fmt, time::SystemTime};
+
+/// Thread-local capturing the sender UUID from the most recent SKDM processing.
+/// Set inside open_envelope when a SenderKeyDistributionMessage is processed
+/// (which returns Ok(None), losing the sender metadata).
+thread_local! {
+    pub static LAST_SKDM_SENDER: RefCell<Option<String>> = RefCell::new(None);
+}
 
 use aes::cipher::block_padding::{Iso7816, RawPadding};
 use base64::prelude::*;
@@ -147,12 +154,16 @@ where
 
             if let Some(bytes) = message.sender_key_distribution_message {
                 let skdm = SenderKeyDistributionMessage::try_from(&bytes[..])?;
+                let sender_uuid = plaintext.metadata.sender.raw_uuid().to_string();
                 process_sender_key_distribution_message(
                     &plaintext.metadata.protocol_address()?,
                     &skdm,
                     &mut self.protocol_store,
                 )
                 .await?;
+                LAST_SKDM_SENDER.with(|cell| {
+                    *cell.borrow_mut() = Some(sender_uuid);
+                });
                 Ok(None)
             } else {
                 let content = Content::from_proto(message, plaintext.metadata)?;
