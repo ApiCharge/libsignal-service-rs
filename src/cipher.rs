@@ -5,6 +5,9 @@ use std::{cell::RefCell, convert::TryFrom, fmt, time::SystemTime};
 /// (which returns Ok(None), losing the sender metadata).
 thread_local! {
     pub static LAST_SKDM_SENDER: RefCell<Option<String>> = RefCell::new(None);
+    /// Group master key (hex) from the SKDM's DataMessage.group_v2.master_key.
+    /// SKDMs are always sent within a group context.
+    pub static LAST_SKDM_GROUP_ID: RefCell<Option<String>> = RefCell::new(None);
 }
 
 use aes::cipher::block_padding::{Iso7816, RawPadding};
@@ -163,6 +166,16 @@ where
                 .await?;
                 LAST_SKDM_SENDER.with(|cell| {
                     *cell.borrow_mut() = Some(sender_uuid);
+                });
+                // Capture group context from the SKDM's DataMessage
+                let skdm_group_id = message
+                    .data_message
+                    .as_ref()
+                    .and_then(|dm| dm.group_v2.as_ref())
+                    .and_then(|g| g.master_key.as_ref())
+                    .map(hex::encode);
+                LAST_SKDM_GROUP_ID.with(|cell| {
+                    *cell.borrow_mut() = skdm_group_id;
                 });
                 Ok(None)
             } else {
