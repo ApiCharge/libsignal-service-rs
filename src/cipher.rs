@@ -6,8 +6,11 @@ use std::{cell::RefCell, convert::TryFrom, fmt, time::SystemTime};
 thread_local! {
     pub static LAST_SKDM_SENDER: RefCell<Option<String>> = RefCell::new(None);
     /// Group master key (hex) from the SKDM's DataMessage.group_v2.master_key.
-    /// SKDMs are always sent within a group context.
+    /// Falls back to distribution_id-based resolution in the daemon when None.
     pub static LAST_SKDM_GROUP_ID: RefCell<Option<String>> = RefCell::new(None);
+    /// Distribution ID (UUID string) from the parsed SKDM protobuf.
+    /// Used by the daemon to resolve group context when group_v2.master_key is absent.
+    pub static LAST_SKDM_DISTRIBUTION_ID: RefCell<Option<String>> = RefCell::new(None);
 }
 
 use aes::cipher::block_padding::{Iso7816, RawPadding};
@@ -176,6 +179,13 @@ where
                     .map(hex::encode);
                 LAST_SKDM_GROUP_ID.with(|cell| {
                     *cell.borrow_mut() = skdm_group_id;
+                });
+                // Capture distribution_id from the SKDM (set by process_sender_key_distribution_message)
+                let dist_id = libsignal_protocol::LAST_SKDM_DISTRIBUTION_ID
+                    .with(|cell| cell.borrow_mut().take())
+                    .map(|uuid| uuid.to_string());
+                LAST_SKDM_DISTRIBUTION_ID.with(|cell| {
+                    *cell.borrow_mut() = dist_id;
                 });
                 Ok(None)
             } else {
